@@ -17,7 +17,7 @@ const tokenListPath = path.resolve(__dirname, '../data/token_list.json');
 
 // Инициализация соединения и SDK
 // Замените на ваш RPC эндпоинт (например, Helius или другой)
-const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+const connection = new Connection("https://mainnet.helius-rpc.com/?api-key=a298442a-78f9-47b2-bed0-c2d1fca7981c", "confirmed");
 
 export async function createToken() {
   const creatorWallet = getWalletKeypair('dev');

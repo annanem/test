@@ -2,20 +2,44 @@
 import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { VersionedTransaction, Keypair } from '@solana/web3.js';
+import { Keypair, Connection, PublicKey } from '@solana/web3.js';
+import { AnchorProvider } from "@coral-xyz/anchor";
 import bs58 from 'bs58';
-import fetch from 'node-fetch';
-import { web3Connection } from '../utils/solanaRpcClient.js';
+import { PumpFunSDK } from '../../PumpFunSDK.js'; // путь к вашему SDK
+import { getOrCreateAssociatedTokenAccount, getAccount } from '@solana/spl-token'; // для баланса токенов
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const tokenListPath = path.resolve(__dirname, '../data/token_list.json');
 const additionalWalletsPath = path.resolve(__dirname, '../config/wallets_additional.json');
+const miniWalletsPath = path.resolve(__dirname, '../config/wallets_mini.json');
 
-/**
- * Получить текущий токен (последний созданный)
- */
+// Настраиваем RPC соединение
+const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+
+// Функция для создания provider и keypair из base58 ключа
+function createProviderFromWalletBase58(secretKeyBase58) {
+  const secretKey = bs58.decode(secretKeyBase58);
+  const keypair = Keypair.fromSecretKey(secretKey);
+  const provider = new AnchorProvider(
+    connection,
+    {
+      publicKey: keypair.publicKey,
+      signAllTransactions: async (txs) => {
+        txs.forEach(tx => tx.sign(keypair));
+        return txs;
+      },
+      signTransaction: async (tx) => {
+        tx.sign(keypair);
+        return tx;
+      }
+    },
+    { commitment: "confirmed" }
+  );
+  return { provider, keypair };
+}
+
 function getCurrentTokenMint() {
   const content = readFileSync(tokenListPath, 'utf-8');
   const tokenList = JSON.parse(content);
@@ -25,175 +49,95 @@ function getCurrentTokenMint() {
   return tokenList[tokenList.length - 1].mint;
 }
 
-/**
- * Загрузить дополнительный кошельки
- */
 function loadAdditionalWallets() {
   const content = readFileSync(additionalWalletsPath, 'utf-8');
-  return JSON.parse(content); // массив объектов: {name, privateKeyBase58, publicKey}
+  return JSON.parse(content);
 }
 
-/**
- * Выполнить транзакцию через pumpportal.fun/api/trade-local
- * @param {object} params 
- * @param {string} params.publicKey - Публичный ключ кошелька (string)
- * @param {string} params.action - "buy" или "sell"
- * @param {string} params.mint - адрес токена
- * @param {boolean} params.denominatedInSol - true, если amount в SOL, false если в токенах
- * @param {number|string} params.amount - количество SOL или токенов, либо процент (например "100%" при продаже)
- * @param {number} params.slippage - допустимый процент проскальзывания
- * @param {number} params.priorityFee - приоритетная комиссия
- * @param {string} [params.pool] - "pump" или "raydium"
- * @param {string} params.walletPrivateKeyBase58 - приватный ключ кошелька для подписи транзакции
- */
-export async function tradeToken({
-  publicKey,
-  action,
-  mint,
-  denominatedInSol,
-  amount,
-  slippage,
-  priorityFee,
-  pool = "pump",
-  walletPrivateKeyBase58
-}) {
-  const body = {
-    publicKey,
-    action,
-    mint,
-    denominatedInSol: denominatedInSol ? "true" : "false",
-    amount,
-    slippage,
-    priorityFee,
-    pool
-  };
-
-  const response = await fetch(`https://pumpportal.fun/api/trade-local`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-
-  if (response.status === 200) {
-    const data = await response.arrayBuffer();
-    const tx = VersionedTransaction.deserialize(new Uint8Array(data));
-    const signerKeyPair = Keypair.fromSecretKey(bs58.decode(walletPrivateKeyBase58));
-    tx.sign([signerKeyPair]);
-    const signature = await web3Connection.sendTransaction(tx);
-    await web3Connection.confirmTransaction(signature, 'confirmed');
-    console.log(`Trade ${action} executed. Tx: https://solscan.io/tx/${signature}`);
-  } else {
-    const text = await response.text();
-    console.error(`Error executing trade (${action}):`, response.status, text);
-  }
+function loadMiniWallets() {
+  const content = readFileSync(miniWalletsPath, 'utf-8');
+  return JSON.parse(content);
 }
 
-/**
- * Пример: покупка токена дополнительными кошельками.
- * @param {object} options
- * @param {number} options.amountTokens - сколько токенов купить (если denominatedInSol=false)
- * @param {boolean} options.denominatedInSol - true, если покупаем за SOL, false если покупаем определенное количество токенов
- * @param {number} options.slippage
- * @param {number} options.priorityFee
- * @param {string} [options.pool]
- */
+// Получение баланса токенов кошелька
+async function getTokenBalance(pubkey, mint) {
+  const mintPubkey = new PublicKey(mint);
+  const ata = await getOrCreateAssociatedTokenAccount(connection, Keypair.generate(), mintPubkey, pubkey);
+  const accountInfo = await getAccount(connection, ata.address);
+  return accountInfo.amount; // BigInt количества токенов
+}
+
+// Покупка токена (в SOL)
+async function buyTokenWithSOL(keypair, mint, solAmount) {
+  // solAmount — число (например 0.5 для 0.5 SOL)
+  const sdk = new PumpFunSDK(createProviderFromWalletBase58(bs58.encode(keypair.secretKey)).provider);
+  const buyAmountLamports = BigInt(Math.floor(solAmount * 1e9));
+  await sdk.buy(keypair, new PublicKey(mint), buyAmountLamports);
+  console.log(`Bought token ${mint} for ${solAmount} SOL from wallet ${keypair.publicKey.toBase58()}`);
+}
+
+// Продажа токенов
+async function sellTokenAmount(keypair, mint, tokenAmount) {
+  // tokenAmount — BigInt количества токенов для продажи
+  const sdk = new PumpFunSDK(createProviderFromWalletBase58(bs58.encode(keypair.secretKey)).provider);
+  await sdk.sell(keypair, new PublicKey(mint), tokenAmount);
+  console.log(`Sold ${tokenAmount.toString()} tokens of ${mint} from wallet ${keypair.publicKey.toBase58()}`);
+}
+
 export async function buyWithAdditionalWallets({ 
-    denominatedInSol = false, 
-    slippage = 10, 
-    priorityFee = 0.00001, 
-    pool = "pump",
-    minAmount,
-    maxAmount
-  }) {
-    const mint = getCurrentTokenMint();
-    const wallets = loadAdditionalWallets();
-  
-    for (const w of wallets) {
-      // Генерируем случайное количество токенов между minAmount и maxAmount
-      const randomAmount = Math.floor(Math.random() * (maxAmount - minAmount + 1)) + minAmount;
-      
-      console.log(`Buying token ${mint} with wallet ${w.name} (${w.publicKey}): ${randomAmount} tokens`);
-      await tradeToken({
-        publicKey: w.publicKey,
-        action: "buy",
-        mint,
-        denominatedInSol,
-        amount: randomAmount,
-        slippage,
-        priorityFee,
-        pool,
-        walletPrivateKeyBase58: w.privateKeyBase58
-      });
-    }
-  }
-
-/**
- * Пример: продажа токена дополнительными кошельками.
- * Можно указать amount как число (кол-во токенов) или процент, например "100%" для продажи всех токенов.
- * @param {object} options
- * @param {number|string} options.amount - например, 1000 или "100%" для продажи всех.
- * @param {boolean} options.denominatedInSol - Если true, сумма в SOL. Если false - в токенах.
- * @param {number} options.slippage
- * @param {number} options.priorityFee
- * @param {string} [options.pool]
- */
-export async function sellWithAdditionalWallets({ amount, denominatedInSol = false, slippage = 10, priorityFee = 0.00001, pool = "pump" }) {
+  minAmount,
+  maxAmount
+}) {
+  // Покупаем всегда в SOL и задаём случайное число между min и max SOL
   const mint = getCurrentTokenMint();
   const wallets = loadAdditionalWallets();
 
   for (const w of wallets) {
-    console.log(`Selling token ${mint} with wallet ${w.name} (${w.publicKey}), amount: ${amount}`);
-    await tradeToken({
-      publicKey: w.publicKey,
-      action: "sell",
-      mint,
-      denominatedInSol,
-      amount,
-      slippage,
-      priorityFee,
-      pool,
-      walletPrivateKeyBase58: w.privateKeyBase58
-    });
+    const secretKey = bs58.decode(w.privateKeyBase58);
+    const keypair = Keypair.fromSecretKey(secretKey);
+    const randomAmount = Math.random() * (maxAmount - minAmount) + minAmount;
+    // Покупаем за randomAmount SOL
+    await buyTokenWithSOL(keypair, mint, randomAmount);
   }
 }
 
+export async function sellWithAdditionalWallets({ amount }) {
+  // amount может быть числом или строкой с процентом.
+  // Если число, продаём столько токенов.
+  // Если "100%", продаём все токены.
+  const mint = getCurrentTokenMint();
+  const wallets = loadAdditionalWallets();
 
-/**
- * Функция для покупки токена мини-кошельками.
- * @param {object} options
- * @param {number} options.amountSol - Сколько SOL тратить на покупку (по умолчанию 0.01)
- * @param {number} options.slippage - допустимый процент проскальзывания
- * @param {number} options.priorityFee - приоритетная комиссия
- * @param {string} [options.pool] - "pump" или "raydium"
- * @param {number} [options.delayMs] - задержка между транзакциями в миллисекундах (по умолчанию 1000 мс)
- */
-export async function buyWithMiniWallets({
-    amountSol = 0.01,
-    slippage = 10,
-    priorityFee = 0.00001,
-    pool = "pump",
-    delayMs = 1000
-  }) {
-    const mint = getCurrentTokenMint();
-    const wallets = loadMiniWallets();
-  
-    for (const w of wallets) {
-      console.log(`Mini wallet ${w.name} (${w.publicKey}) buying token ${mint} for ${amountSol} SOL`);
-      await tradeToken({
-        publicKey: w.publicKey,
-        action: "buy",
-        mint,
-        denominatedInSol: true, // Покупаем за SOL
-        amount: amountSol,
-        slippage,
-        priorityFee,
-        pool,
-        walletPrivateKeyBase58: w.privateKeyBase58
-      });
-  
-      // Задержка перед переходом к следующему кошельку
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+  for (const w of wallets) {
+    const secretKey = bs58.decode(w.privateKeyBase58);
+    const keypair = Keypair.fromSecretKey(secretKey);
+    let tokenAmountToSell;
+
+    if (typeof amount === 'string' && amount.endsWith('%')) {
+      const percent = parseInt(amount.replace('%', ''), 10);
+      const balance = await getTokenBalance(keypair.publicKey, mint);
+      tokenAmountToSell = (balance * BigInt(percent)) / 100n;
+    } else {
+      // amount — число токенов
+      tokenAmountToSell = BigInt(amount);
     }
+
+    await sellTokenAmount(keypair, mint, tokenAmountToSell);
   }
+}
+
+export async function buyWithMiniWallets({
+  amountSol = 0.01,
+  delayMs = 1000
+}) {
+  const mint = getCurrentTokenMint();
+  const wallets = loadMiniWallets();
+
+  for (const w of wallets) {
+    const secretKey = bs58.decode(w.privateKeyBase58);
+    const keypair = Keypair.fromSecretKey(secretKey);
+
+    await buyTokenWithSOL(keypair, mint, amountSol);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+}
