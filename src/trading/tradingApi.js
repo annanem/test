@@ -1,19 +1,22 @@
-// src/tokens/jitoBundleHandler.js
+// src/trading/tradingApi.js
 import { pumpApiRequest } from '../utils/pumpApiClient.js';
 
-export async function buyTokenInJitoBundle(tokenAddress, amount, price, buyerWallet) {
-  const payload = {
-    tokenAddress,
-    amount,
-    price,
-    wallet: buyerWallet // адрес или публичный ключ покупателя
-  };
-
-  // Предположим: POST /local-trading-api/jito-bundles/buy
-  const response = await pumpApiRequest('/local-trading-api/jito-bundles/buy', {
+export async function buyToken(tokenAddress, amount, price, buyerWallet) {
+  const payload = { tokenAddress, amount, price, wallet: buyerWallet };
+  const response = await pumpApiRequest('/local-trading-api/trading-api/buy', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
 
-  return response;  
+  return response;
+}
+
+export async function sellToken(tokenAddress, amount, price, sellerWallet) {
+  const payload = { tokenAddress, amount, price, wallet: sellerWallet };
+  const response = await pumpApiRequest('/local-trading-api/trading-api/sell', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  return response;
 }
