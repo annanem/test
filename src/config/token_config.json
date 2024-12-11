@@ -1,0 +1,11 @@
+{
+    "name": "PPTest",
+    "symbol": "TEST",
+    "description": "This is an example token created via PumpPortal.fun",
+    "image_path": "./example.png",
+    "twitter": "https://x.com/a1lon9/status/1812970586420994083",
+    "telegram": "https://t.me/yourchannel",
+    "website": "https://pumpportal.fun",
+    "showName": true
+  }
+  
