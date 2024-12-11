@@ -1,13 +1,11 @@
 // src/tokens/tokenCreator.js
-import { VersionedTransaction, Keypair } from '@solana/web3.js';
+import { Keypair, Connection } from '@solana/web3.js';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fetch from 'node-fetch';
-import FormData from 'form-data';
-import { web3Connection } from '../utils/solanaRpcClient.js';
+import { AnchorProvider } from "@coral-xyz/anchor";
+import { PumpFunSDK } from '../../PumpFunSDK.js'; // путь к PumpFunSDK
 import { getWalletKeypair } from '../wallets/walletManager.js';
-import { pumpApiRequest } from '../utils/pumpApiClient.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,13 +13,31 @@ const __dirname = path.dirname(__filename);
 const tokenConfigPath = path.resolve(__dirname, '../config/token_config.json');
 const tokenConfig = JSON.parse(readFileSync(tokenConfigPath, 'utf-8'));
 
-// Файл со списком всех токенов
 const tokenListPath = path.resolve(__dirname, '../data/token_list.json');
+
+// Инициализация соединения и SDK
+// Замените на ваш RPC эндпоинт (например, Helius или другой)
+const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
 
 export async function createToken() {
   const creatorWallet = getWalletKeypair('dev');
-  
-  const mintKeypair = Keypair.generate(); 
+  const creatorKeypair = creatorWallet; // Keypair dev кошелька
+  const provider = new AnchorProvider(connection, {
+    publicKey: creatorKeypair.publicKey,
+    signAllTransactions: async (txs) => {
+      txs.forEach((tx) => tx.sign(creatorKeypair));
+      return txs;
+    },
+    signTransaction: async (tx) => {
+      tx.sign(creatorKeypair);
+      return tx;
+    }
+  }, { commitment: "confirmed" });
+
+  const sdk = new PumpFunSDK(provider);
+
+  const mintKeypair = Keypair.generate();
+
   const {
     name,
     symbol,
@@ -33,63 +49,37 @@ export async function createToken() {
     showName
   } = tokenConfig;
 
+  // Преобразуем изображение в Blob для createTokenMetadata
   const imageBuffer = readFileSync(path.resolve(__dirname, image_path));
+  const fileBlob = new Blob([imageBuffer], { type: 'image/png' });
 
-  const formData = new FormData();
-  formData.append("file", imageBuffer, { filename: 'example.png', contentType: 'image/png' });
-  formData.append("name", name);
-  formData.append("symbol", symbol);
-  formData.append("description", description);
-  formData.append("twitter", twitter || "");
-  formData.append("telegram", telegram || "");
-  formData.append("website", website || "");
-  formData.append("showName", showName ? "true" : "false");
+  const createTokenMetadata = {
+    name: name,
+    symbol: symbol,
+    description: description,
+    file: fileBlob,
+    twitter: twitter,
+    telegram: telegram,
+    website: website
+  };
 
-  const metadataResponse = await fetch("https://pump.fun/api/ipfs", {
-    method: "POST",
-    body: formData
-  });
+  // Создадим токен и сразу купим 1 SOL токенов для инициализации (можно менять сумму)
+  const buyAmountSol = BigInt(1_000_000_000); // 1 SOL в lamports
 
-  if (!metadataResponse.ok) {
-    const text = await metadataResponse.text();
-    throw new Error(`Metadata creation failed: ${metadataResponse.status} ${text}`);
-  }
+  const createResults = await sdk.createAndBuy(
+    creatorKeypair,
+    mintKeypair,
+    createTokenMetadata,
+    buyAmountSol
+  );
 
-  const metadataResponseJSON = await metadataResponse.json();
-
-  const createTxData = await pumpApiRequest('/api/trade-local', {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      "publicKey": creatorWallet.publicKey.toBase58(),
-      "action": "create",
-      "tokenMetadata": {
-        name: metadataResponseJSON.metadata.name,
-        symbol: metadataResponseJSON.metadata.symbol,
-        uri: metadataResponseJSON.metadataUri
-      },
-      "mint": mintKeypair.publicKey.toBase58(),
-      "denominatedInSol": "true",
-      "amount": 1, 
-      "slippage": 10,
-      "priorityFee": 0.0005,
-      "pool": "pump"
-    }),
-    responseType: 'arrayBuffer'
-  });
-
-  const tx = VersionedTransaction.deserialize(new Uint8Array(createTxData));
-  tx.sign([mintKeypair, creatorWallet]);
-  const signature = await web3Connection.sendTransaction(tx);
-  console.log("Token created! Transaction: https://solscan.io/tx/" + signature);
+  console.log("Token created! Signature:", createResults.signature);
   console.log("Mint Address:", mintKeypair.publicKey.toBase58());
 
   const newRecord = {
     mint: mintKeypair.publicKey.toBase58(),
     createdAt: new Date().toISOString(),
-    txSignature: signature,
+    txSignature: createResults.signature,
     name,
     symbol,
     description
@@ -108,7 +98,7 @@ export async function createToken() {
   writeFileSync(tokenListPath, JSON.stringify(tokenList, null, 2), 'utf-8');
 
   return {
-    txSignature: signature,
+    txSignature: createResults.signature,
     mint: mintKeypair.publicKey.toBase58()
   };
 }
