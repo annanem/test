@@ -1,9 +1,9 @@
 // src/runCreateDevWallet.js
-import { createNewWallet } from './wallets/walletManager.js';
+import { createNewMainWallet } from './wallets/walletManager.js';
 
 async function main() {
   try {
-    createNewWallet('dev');
+    createNewMainWallet('dev');
   } catch (e) {
     console.error('Error creating dev wallet:', e);
   }

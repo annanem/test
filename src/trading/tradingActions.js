@@ -16,7 +16,7 @@ const additionalWalletsPath = path.resolve(__dirname, '../config/wallets_additio
 const miniWalletsPath = path.resolve(__dirname, '../config/wallets_mini.json');
 
 // Настраиваем RPC соединение
-const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+const connection = new Connection("https://mainnet.helius-rpc.com/?api-key=a298442a-78f9-47b2-bed0-c2d1fca7981c", "confirmed");
 
 // Функция для создания provider и keypair из base58 ключа
 function createProviderFromWalletBase58(secretKeyBase58) {

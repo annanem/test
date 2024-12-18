@@ -61,3 +61,44 @@ export async function pumpApiRequest(endpoint, options = {}, retries = 3, retryD
     }
   }
 }
+
+
+/**
+ * Получает список токенов с фильтрацией по маркеткапу, используя gmgn API.
+ * @param {number} minMarketCap - Минимальный маркеткап.
+ * @param {number} maxMarketCap - Максимальный маркеткап.
+ * @param {number} limit - Количество токенов для запроса.
+ * @returns {Promise<Array>} - Массив объектов токенов.
+ */
+export async function fetchTokensFromGmgnByMarketCap(minMarketCap, maxMarketCap, limit = 50) {
+  const GMGN_BASE_URL = 'https://gmgn.ai';
+  const endpoint = `/defi/quotation/v1/rank/sol/pump?limit=${limit}&orderby=progress&direction=desc&pump=true`;
+
+  try {
+    const response = await fetch(`${GMGN_BASE_URL}${endpoint}`);
+    if (!response.ok) {
+      throw new Error(`GMGN API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // Проверяем, есть ли данные
+    if (!data || !data.data) {
+      throw new Error('Invalid response structure from GMGN API.');
+    }
+
+    // Фильтруем токены по маркеткапу
+    return data.data
+      .filter(token => 
+        token.marketcap >= minMarketCap && token.marketcap <= maxMarketCap
+      )
+      .map(token => ({
+        name: token.name,
+        marketCap: token.marketcap,
+        mint: token.mint,
+      }));
+  } catch (error) {
+    console.error('Error fetching tokens from GMGN API:', error.message);
+    throw error; // Пробрасываем ошибку дальше
+  }
+}

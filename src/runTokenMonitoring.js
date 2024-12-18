@@ -2,12 +2,12 @@
 import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { PriceMonitor } from './priceMonitor.js';
+import { PriceMonitor } from './trading/priceMonitor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const tokenListPath = path.resolve(__dirname, '../data/token_list.json');
+const tokenListPath = path.resolve(__dirname, './data/token_list.json');
 
 function getLatestTokenMint() {
   const content = readFileSync(tokenListPath, 'utf-8');

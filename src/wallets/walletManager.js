@@ -57,45 +57,61 @@ export function getWalletKeypair(walletName) {
 }
 
 // Функция создания основного кошелька (например dev, funder_dev, funder_additional)
-export function createNewMainWallet(walletName) {
+export function createNewMainWallet() {
   const wallets = loadWalletsConfig();
-  if (wallets[walletName]) {
-    throw new Error(`Wallet ${walletName} already exists.`);
-  }
 
+  // Создание нового ключа
   const newKeypair = Keypair.generate();
   const base58Key = bs58.encode(newKeypair.secretKey);
+  const walletName = `dev-${Date.now()}`; // Уникальное имя для нового кошелька
+
+  // Добавляем новый кошелёк с уникальным именем
   wallets[walletName] = {
     privateKeyBase58: base58Key,
     publicKey: newKeypair.publicKey.toBase58()
   };
+
+  // Обновляем ссылку на последний dev-кошелёк
+  wallets['dev'] = wallets[walletName];
+
+  // Сохраняем обновлённый список кошельков
   saveWalletsConfig(wallets);
 
-  console.log(`Created main wallet ${walletName}: ${newKeypair.publicKey.toBase58()}`);
-  return wallets[walletName];
+  console.log(`Created new main wallet "${walletName}": ${newKeypair.publicKey.toBase58()}`);
+  console.log(`Updated "dev" to point to the latest wallet: ${walletName}`);
+  return wallets['dev'];
 }
+
 
 // Создание нескольких кошельков (additional или mini)
 export function createMultipleWallets(filePath, prefix, count) {
   const existing = loadWalletFile(filePath);
-  for (let i = 1; i <= count; i++) {
-    const walletName = `${prefix}${i}`;
-    if (existing.find(w => w.name === walletName)) {
-      console.warn(`Wallet ${walletName} already exists in ${filePath}, skipping creation.`);
-      continue;
-    }
 
+  // Найти максимальный номер среди существующих кошельков
+  const maxNumber = existing
+    .filter(wallet => wallet.name.startsWith(prefix)) // Фильтруем кошельки с нужным префиксом
+    .map(wallet => parseInt(wallet.name.replace(prefix, ''), 10)) // Извлекаем номера
+    .filter(num => !isNaN(num)) // Убираем некорректные значения
+    .reduce((max, num) => Math.max(max, num), 0); // Находим максимум
+
+  // Генерируем новые кошельки с последовательными номерами
+  for (let i = 1; i <= count; i++) {
+    const nextNumber = maxNumber + i;
+    const walletName = `${prefix}${nextNumber}`;
     const newKeypair = Keypair.generate();
     const base58Key = bs58.encode(newKeypair.secretKey);
+
     existing.push({
       name: walletName,
       privateKeyBase58: base58Key,
       publicKey: newKeypair.publicKey.toBase58()
     });
   }
+
   saveWalletFile(filePath, existing);
   console.log(`Created ${count} wallets with prefix "${prefix}" in ${filePath}`);
 }
+
 
 // Пополнение одного кошелька из указанных основных кошельков (funder_dev или funder_additional)
 async function fundSingleWallet(funderKeypair, targetPublicKeyString, amountSol) {
@@ -144,3 +160,14 @@ export async function fundMultipleWallets(filePath, amountsObject) {
     console.log(`Funded wallet ${w.name} with ${amount} SOL from funder_additional. Tx: ${sig}`);
   }
 }
+
+// Возвращает последние N кошельков из указанного файла
+export function getLastGeneratedWallets(filePath, count) {
+  const allWallets = loadWalletFile(filePath);
+  if (count > allWallets.length) {
+    console.warn(`Requested ${count} wallets, but only ${allWallets.length} exist.`);
+    return allWallets;
+  }
+  return allWallets.slice(-count); // Берём последние N кошельков
+}
+

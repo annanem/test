@@ -1,56 +1,95 @@
 // src/tokens/tokenParser.js
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fetch from 'node-fetch';
+import { createWriteStream } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Параметры фильтра
-const MIN_MARKET_CAP = 50000;
-const MAX_MARKET_CAP = 100000;
+// Путь к settings.json
+const settingsPath = path.resolve(__dirname, '../config/settings.json');
+const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
 
-// Предположим, что есть такой эндпоинт, который возвращает список токенов с их параметрами.
-// Нужно уточнить у pumpportal.fun или в их API, какой именно эндпоинт.
-// Допустим, что есть "/api/tokens" или что-то подобное. 
-// Ниже — примерный вариант. Вам нужно будет адаптировать под реальный эндпоинт pumpportal.fun.
+// Параметры берем из settings
+const { minMarketCap, maxMarketCap } = settings;
 
+const parsedTokensPath = path.resolve(__dirname, '../data/parsed_tokens.json');
+const imagesDir = path.resolve(__dirname, '../data/images');
+
+// Предполагаемый эндпоинт получения списка токенов
 const TOKENS_ENDPOINT = "https://pumpportal.fun/api/tokens";
 
 async function fetchTokens() {
   const response = await fetch(TOKENS_ENDPOINT);
   if (!response.ok) {
-    throw new Error(`Failed to fetch tokens: ${response.status} ${await response.text()}`);
+    const text = await response.text();
+    throw new Error(`Failed to fetch tokens: ${response.status} ${text}`);
   }
   const data = await response.json();
-  return data; // Предположим, data — массив объектов { mint, name, symbol, description, imageUrl, marketCap, ... }
+  return data;
 }
 
-export async function parseTokensByMarketCap(minCap = MIN_MARKET_CAP, maxCap = MAX_MARKET_CAP) {
-  const tokens = await fetchTokens();
+function filterTokens(tokens, minMC, maxMC) {
+  return tokens.filter(t => t.marketCap >= minMC && t.marketCap <= maxMC);
+}
 
-  // Фильтруем по маркеткапу
-  const filtered = tokens.filter(t => t.marketCap >= minCap && t.marketCap <= maxCap);
-
-  // Генерируем ссылку на график
-  // Формат ссылки: https://dexrabbit.com/solana/pumpfun/<MINT>
-  const result = filtered.map(t => {
-    return {
-      name: t.name,
-      symbol: t.symbol,
-      description: t.description,
-      imageUrl: t.imageUrl,
-      chartLink: `https://dexrabbit.com/solana/pumpfun/${t.mint}`, 
-      mint: t.mint,
-      marketCap: t.marketCap
-    };
+async function downloadImage(url, filePath) {
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`Failed to download image: ${resp.status} ${await resp.text()}`);
+  }
+  const fileStream = createWriteStream(filePath);
+  return new Promise((resolve, reject) => {
+    resp.body.pipe(fileStream);
+    resp.body.on("error", reject);
+    fileStream.on("finish", resolve);
   });
+}
 
-  // Сохраняем результат в файл parsed_tokens.json
-  const parsedTokensPath = path.resolve(__dirname, '../data/parsed_tokens.json');
+export async function parseTokensByMarketCap() {
+  const tokens = await fetchTokens();
+  const filtered = filterTokens(tokens, minMarketCap, maxMarketCap);
+
+  let result = [];
+  for (const token of filtered) {
+    const mint = token.mint;
+    const imageUrl = token.imageUrl;
+    const ext = path.extname(new URL(imageUrl).pathname) || '.png'; 
+    const imageFileName = `${mint}${ext}`;
+    const imageFilePath = path.join(imagesDir, imageFileName);
+
+    try {
+      await downloadImage(imageUrl, imageFilePath);
+    } catch (e) {
+      console.error(`Failed to download image for ${mint}:`, e);
+    }
+
+    result.push({
+      mint: mint,
+      name: token.name,
+      symbol: token.symbol,
+      description: token.description,
+      originalImageUrl: imageUrl,
+      localImageFile: imageFileName,
+      marketCap: token.marketCap
+    });
+  }
+
+  let existing = [];
+  if (existsSync(parsedTokensPath)) {
+    const content = readFileSync(parsedTokensPath, 'utf-8');
+    try {
+      existing = JSON.parse(content);
+    } catch (e) {
+      existing = [];
+    }
+  }
+
+  // Перезапишем файл новыми данными
   writeFileSync(parsedTokensPath, JSON.stringify(result, null, 2), 'utf-8');
 
-  console.log(`Found ${result.length} tokens in range ${minCap} - ${maxCap} and saved to parsed_tokens.json`);
+  console.log(`Found ${result.length} tokens in range ${minMarketCap} - ${maxMarketCap} and saved to parsed_tokens.json`);
   return result;
 }

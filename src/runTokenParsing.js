@@ -1,9 +1,13 @@
-// src/tokens/runTokenParsing.js
-import { parseTokensByMarketCap } from './tokenParser.js';
+// src/runTokenParsing.js
+import { parseTokensByMarketCap } from './tokens/tokenParser.js';
 
 async function main() {
-  const tokens = await parseTokensByMarketCap(50000, 100000);
-  console.log("Tokens found:", tokens);
+  try {
+    const result = await parseTokensByMarketCap();
+    console.log("Parsing completed. Result:", result);
+  } catch (e) {
+    console.error("Error parsing tokens:", e);
+  }
 }
 
 main();

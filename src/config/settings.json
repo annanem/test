@@ -1,0 +1,6 @@
+{
+  "additionalWalletsToUse": 1,
+  "miniWalletsToUse": 3,
+  "minMarketCap": 50000,
+  "maxMarketCap": 100000
+}
