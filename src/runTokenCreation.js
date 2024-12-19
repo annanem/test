@@ -1,4 +1,4 @@
-// src/main.js
+// src/    .js
 import { createToken } from './tokens/tokenCreator.js';
 
 async function main() {

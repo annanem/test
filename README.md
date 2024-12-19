@@ -9,7 +9,7 @@ node src/runFundminiwallets.js
 
 **МОНИТОРИНГ**
 node src/runtokenmonitoring.js мониторит состояние токена, рабочий 
-node src/runTokenParsing.js выгрузка существующих токенов, 
+node  src/runtokenfetcher.js парсинг токенов, рабочий, но есть вопросы (и еще нудно ли вынести настройки фильтрации в сеттингс??)
 
 **ЗАПУСК**
 node src/runTokenCreation.js
@@ -18,11 +18,10 @@ node src/runMiniBuy.js
 node src/runAdditionalSell.js
 
 
-node  src/runtokenparsing.js
+
 *генерация адресов с pump, bump*
 
 
-node  src/runtokenfetcher.js
 
 
 
