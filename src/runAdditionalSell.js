@@ -1,5 +1,5 @@
 // src/trading/runAdditionalSell.js
-import { sellWithAdditionalWallets } from './tradingActions.js';
+import { sellWithAdditionalWallets } from './trading/tradingActions.js';
 
 async function main() {
   // Продаем все токены ("100%") с каждого additional кошелька.

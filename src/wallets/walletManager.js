@@ -13,6 +13,30 @@ const walletsConfigPath = path.resolve(__dirname, '../config/wallets_config.json
 const additionalWalletsPath = path.resolve(__dirname, '../config/wallets_additional.json');
 const miniWalletsPath = path.resolve(__dirname, '../config/wallets_mini.json');
 
+
+const envPath = path.resolve(__dirname, '../config/env.json');
+const env = JSON.parse(readFileSync(envPath, 'utf-8'));
+
+// Получение Keypair из приватного ключа
+export function getFunderKeypair(type) {
+  let privateKeyBase58;
+  if (type === 'additional') {
+    privateKeyBase58 = env.FUNDER_ADDITIONAL_PRIVATE_KEY;
+  } else if (type === 'mini') {
+    privateKeyBase58 = env.FUNDER_MINI_PRIVATE_KEY;
+  } else {
+    throw new Error(`Invalid funder type: ${type}`);
+  }
+
+  if (!privateKeyBase58) {
+    throw new Error(`Private key for funder_${type} is missing in env.json`);
+  }
+
+  const secretKey = bs58.decode(privateKeyBase58);
+  return Keypair.fromSecretKey(secretKey);
+}
+
+
 // Универсальные функции загрузки/сохранения
 function loadWalletFile(filePath) {
   if (!existsSync(filePath)) {
@@ -146,18 +170,24 @@ export async function fundDevWallet(amountSol) {
 
 // Пополнение нескольких additional или mini кошельков из funder_additional
 export async function fundMultipleWallets(filePath, amountsObject) {
+  const settingsPath = path.resolve(__dirname, '../config/settings.json');
+  const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
   const wallets = loadWalletFile(filePath);
-  const mainWallets = loadWalletsConfig();
-  if (!mainWallets['funder_additional']) {
-    throw new Error(`Funder_additional wallet not found in configuration.`);
-  }
-  const funderKeypair = getWalletKeypair('funder_additional');
+  
+  const count = filePath.includes('additional') 
+    ? settings.additionalWalletsToUse 
+    : settings.miniWalletsToUse;
 
-  for (const w of wallets) {
+  const latestWallets = wallets.slice(-count);
+
+  const funderType = filePath.includes('additional') ? 'additional' : 'mini';
+  const funderKeypair = getFunderKeypair(funderType);
+
+  for (const w of latestWallets) {
     const amount = amountsObject[w.name];
     if (!amount) continue; 
     const sig = await fundSingleWallet(funderKeypair, w.publicKey, amount);
-    console.log(`Funded wallet ${w.name} with ${amount} SOL from funder_additional. Tx: ${sig}`);
+    console.log(`Funded wallet ${w.name} with ${amount} SOL from funder_${funderType}. Tx: ${sig}`);
   }
 }
 

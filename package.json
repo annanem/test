@@ -2,7 +2,7 @@
   "type": "module",
   "dependencies": {
     "@solana/spl-token": "^0.4.9",
-    "@solana/web3.js": "^1.95.8",
+    "@solana/web3.js": "^1.98.0",
     "2captcha": "^3.0.5-2",
     "axios": "^1.7.9",
     "bs58": "^6.0.0",
@@ -13,6 +13,7 @@
     "puppeteer": "^23.11.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-recaptcha": "^3.6.8",
-    "table": "^6.9.0"
+    "table": "^6.9.0",
+    "tweetnacl": "^1.0.3"
   }
 }

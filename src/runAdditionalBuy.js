@@ -1,16 +1,25 @@
 // src/trading/runAdditionalBuy.js
-import { buyWithAdditionalWallets } from './tradingActions.js';
+import { buyWithAdditionalWallets } from './trading/tradingActions.js';
+import { readFileSync } from 'fs';
+import path from 'path';
+
+const settingsPath = path.resolve('./src/config/settings.json');
+
+// Load settings
+const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+const { purchaseAmountMin, purchaseAmountMax } = settings;
 
 async function main() {
-  // Каждый дополнительный кошелёк купит случайное количество токенов от 500000 до 1000000
-  await buyWithAdditionalWallets({
-    denominatedInSol: false,
-    slippage: 10,
-    priorityFee: 0.00001,
-    pool: "pump",
-    minAmount: 500000,
-    maxAmount: 1000000
-  });
+  try {
+    console.log('Starting purchases with additional wallets...');
+    await buyWithAdditionalWallets({
+      minAmount: purchaseAmountMin,
+      maxAmount: purchaseAmountMax
+    });
+    console.log('Purchases completed.');
+  } catch (err) {
+    console.error('Error during additional wallet purchases:', err.message);
+  }
 }
 
 main();
